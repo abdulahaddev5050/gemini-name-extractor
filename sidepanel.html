@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Job Scraper</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 15px;
+            color: #333;
+            background-color: #ffffff;
+            margin: 0;
+        }
+
+        /* --- 1. Top Controls --- */
+        #startBtn {
+            background-color: #90ee90; /* Light Green */
+            color: #006400; /* Dark Green text for contrast */
+            border: none;
+            padding: 12px;
+            width: 100%;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-bottom: 15px;
+        }
+        #startBtn:hover {
+            background-color: #76c976;
+        }
+        #startBtn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            color: #666;
+        }
+
+        /* --- 2. Log Box --- */
+        #logBox {
+            background-color: #f0f0f0; /* Light Gray */
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            height: 100px;
+            padding: 10px;
+            overflow-y: auto;
+            font-size: 13px;
+            font-family: monospace;
+            margin-bottom: 20px;
+            color: #555;
+        }
+
+        /* --- 3. The Table --- */
+        table {
+            width: 100%;
+            border-collapse: collapse; /* Removes space between borders */
+            margin-bottom: 20px;
+            font-size: 13px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        thead {
+            background-color: #90ee90; /* Light Green */
+        }
+
+        th {
+            text-align: left;
+            padding: 10px;
+            font-weight: bold; /* Bold text requested */
+            color: #006400;
+            border-bottom: 2px solid #76c976;
+        }
+
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee; /* Light margin lines */
+        }
+
+        /* specific column widths to fit side panel */
+        th:nth-child(1) { width: 30%; } /* Name */
+        th:nth-child(2) { width: 40%; } /* Jobs */
+        th:nth-child(3) { width: 30%; } /* Status */
+
+        /* --- 4. Upload Section --- */
+        h1 {
+            font-size: 16px;
+            font-weight: 700; /* Bold */
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        .upload-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .upload-btn {
+            background-color: #87CEFA; /* Light Sky Blue */
+            color: #004085;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            flex: 1; /* Makes buttons equal width */
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .upload-btn:hover {
+            background-color: #6eb9ea;
+        }
+
+        /* Hide the actual file input */
+        #hiddenFileInput {
+            display: none;
+        }
+
+        /* Add this to your style section */
+        .delete-btn {
+            background-color: #ffcccc;
+            border: 1px solid #ff4444;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 5px 8px;
+            font-size: 12px;
+        }
+        .delete-btn:hover {
+            background-color: #ff9999;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="startBtn">Start</button>
+
+    <div id="logBox"></div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Jobs</th>
+                <th>Status</th>
+                <th>Action</th>
+                </tr>
+        </thead>
+        <tbody id="jobTableBody">
+            <tr>
+                <td colspan="3" style="text-align:center; color:#999;">No jobs loaded yet</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h1>Upload Files From</h1>
+    
+    <div class="upload-buttons">
+        <button class="upload-btn" id="computerBtn">💻 My Computer</button>
+    </div>
+
+    <input type="file" id="hiddenFileInput" accept=".json" multiple>
+
+    <script src="sidepanel.js"></script>
+</body>
+</html>

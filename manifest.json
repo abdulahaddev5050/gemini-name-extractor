@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Job Auto-Scraper",
+  "version": "1.0",
+  "description": "Automates sending job data to Gemini and saving results to Sheets.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open Job Agent"
+  }
+}
