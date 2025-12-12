@@ -91,6 +91,7 @@
         }
 
         .upload-buttons {
+            margin-bottom: 10px;
             display: flex;
             gap: 10px;
         }
@@ -128,6 +129,19 @@
         .delete-btn:hover {
             background-color: #ff9999;
         }
+
+        .reset-btn {
+            background-color: #ffeeb3; /* Light Yellow */
+            border: 1px solid #ffcc00;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 5px 8px;
+            font-size: 12px;
+            margin-right: 5px; /* Spacing between buttons */
+        }
+        .reset-btn:hover {
+            background-color: #ffd633;
+        }
     </style>
 </head>
 <body>
@@ -135,7 +149,9 @@
     <button id="startBtn">Start</button>
 
     <div id="logBox"></div>
-
+    <div class="upload-buttons">
+        <button class="upload-btn" id="resetAllBtn">Reset all jobs</button>
+    </div>
     <table>
         <thead>
             <tr>

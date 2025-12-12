@@ -6,6 +6,8 @@ const hiddenInput = document.getElementById('hiddenFileInput');
 const logBox = document.getElementById('logBox');
 const jobTableBody = document.getElementById('jobTableBody');
 const startBtn = document.getElementById('startBtn');
+// NEW: Select the Reset All button
+const resetAllBtn = document.getElementById('resetAllBtn'); 
 
 // --- 1. Load Data on Startup ---
 document.addEventListener('DOMContentLoaded', loadTableFromStorage);
@@ -17,21 +19,27 @@ computerBtn.addEventListener('click', () => {
     hiddenInput.click();
 });
 
-// B. >>> THIS WAS MISSING! Start Button Logic <<<
+// B. Start Button Logic
 startBtn.addEventListener('click', () => {
-    // 1. Check if we have jobs to process
     if (startBtn.disabled) {
         log("⚠️ No jobs loaded yet.");
         return;
     }
-
     log("🚀 Start button clicked. Sending signal to Background...");
-    
-    // 2. Send message to background.js
     chrome.runtime.sendMessage({ action: "START_PROCESSING" });
 });
 
-// C. Handle File Selection
+// C. >>> NEW: Reset All Button Logic <<<
+if (resetAllBtn) {
+    resetAllBtn.addEventListener('click', () => {
+        // Optional: Simple confirmation to prevent accidents
+        if(confirm("Are you sure you want to reset ALL files to pending?")) {
+            resetAllFiles();
+        }
+    });
+}
+
+// D. Handle File Selection
 hiddenInput.addEventListener('change', async (event) => {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
@@ -43,7 +51,6 @@ hiddenInput.addEventListener('change', async (event) => {
             const text = await readFileAsText(file);
             const jsonData = JSON.parse(text);
             
-            // Extract name (e.g. "n8n" from filename)
             let extractedName = "Unknown";
             const nameParts = file.name.split('-');
             if (nameParts.length > 2) {
@@ -57,7 +64,7 @@ hiddenInput.addEventListener('change', async (event) => {
                 totalJobs: jsonData.length || 0,
                 processedCount: 0,
                 status: 'pending',
-                data: jsonData
+                data: jsonData 
             };
 
             await addFileToStorage(fileEntry);
@@ -126,9 +133,12 @@ function loadTableFromStorage() {
 
             row.innerHTML = `
                 <td><strong>${file.name}</strong></td>
-                <td>${file.totalJobs}</td>
+                <td>${file.processedCount} / ${file.totalJobs}</td>
                 <td style="color: ${statusColor}; font-weight:bold;">${statusText}</td>
-                <td><button class="delete-btn" data-id="${file.id}">🗑️</button></td>
+                <td style="white-space: nowrap;">
+                    <button class="reset-btn" data-id="${file.id}" title="Reset to Pending">🔄</button>
+                    <button class="delete-btn" data-id="${file.id}" title="Delete File">🗑️</button>
+                </td>
             `;
 
             jobTableBody.appendChild(row);
@@ -140,9 +150,17 @@ function loadTableFromStorage() {
                 deleteFile(idToDelete);
             });
         });
+
+        document.querySelectorAll('.reset-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idToReset = parseFloat(e.target.getAttribute('data-id'));
+                resetFile(idToReset);
+            });
+        });
     });
 }
 
+// --- DELETE FUNCTION ---
 function deleteFile(id) {
     chrome.storage.local.get(['jobFiles'], (result) => {
         const files = result.jobFiles || [];
@@ -150,6 +168,58 @@ function deleteFile(id) {
         
         chrome.storage.local.set({ jobFiles: newFiles }, () => {
             log('🗑️ File removed.');
+            loadTableFromStorage();
+        });
+    });
+}
+
+// --- RESET SINGLE FILE ---
+function resetFile(id) {
+    chrome.storage.local.get(['jobFiles'], (result) => {
+        const files = result.jobFiles || [];
+        const fileIndex = files.findIndex(f => f.id === id);
+
+        if (fileIndex !== -1) {
+            files[fileIndex].status = 'pending';
+            files[fileIndex].processedCount = 0;
+
+            if (files[fileIndex].data && Array.isArray(files[fileIndex].data)) {
+                files[fileIndex].data.forEach(job => {
+                    job.geminiDone = false;
+                });
+            }
+
+            chrome.storage.local.set({ jobFiles: files }, () => {
+                log(`🔄 Reset "${files[fileIndex].name}".`);
+                loadTableFromStorage();
+            });
+        }
+    });
+}
+
+// --- NEW: RESET ALL FILES FUNCTION ---
+function resetAllFiles() {
+    chrome.storage.local.get(['jobFiles'], (result) => {
+        const files = result.jobFiles || [];
+
+        if (files.length === 0) {
+            log("⚠️ No files to reset.");
+            return;
+        }
+
+        // Loop through EVERY file and reset it
+        files.forEach(file => {
+            file.status = 'pending';
+            file.processedCount = 0;
+            if (file.data && Array.isArray(file.data)) {
+                file.data.forEach(job => {
+                    job.geminiDone = false;
+                });
+            }
+        });
+
+        chrome.storage.local.set({ jobFiles: files }, () => {
+            log(`🔄 All ${files.length} files have been reset.`);
             loadTableFromStorage();
         });
     });
