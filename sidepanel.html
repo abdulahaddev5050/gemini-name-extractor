@@ -13,22 +13,91 @@
             margin: 0;
         }
 
-        /* --- 1. Top Controls --- */
-        #startBtn {
-            background-color: #90ee90; /* Light Green */
-            color: #006400; /* Dark Green text for contrast */
+        /* --- Section Headers --- */
+        .section-header {
+            font-size: 14px;
+            font-weight: 700;
+            color: #555;
+            margin: 15px 0 8px 0;
+            padding-bottom: 4px;
+            border-bottom: 2px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .section-header .step-num {
+            background: #4CAF50;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+        }
+
+        /* --- Upload Button --- */
+        #computerBtn {
+            background-color: #2196F3;
+            color: white;
             border: none;
-            padding: 12px;
+            padding: 14px;
+            width: 100%;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-bottom: 10px;
+        }
+        #computerBtn:hover {
+            background-color: #1976D2;
+        }
+
+        /* --- Table --- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+            font-size: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        thead {
+            background-color: #e3f2fd;
+        }
+        th {
+            text-align: left;
+            padding: 8px;
+            font-weight: bold;
+            color: #1565C0;
+            border-bottom: 2px solid #90CAF9;
+        }
+        td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+        }
+        th:nth-child(1) { width: 35%; }
+        th:nth-child(2) { width: 20%; }
+        th:nth-child(3) { width: 25%; }
+        th:nth-child(4) { width: 20%; }
+
+        /* --- Start Button --- */
+        #startBtn {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 14px;
             width: 100%;
             font-size: 16px;
             font-weight: bold;
             border-radius: 6px;
             cursor: pointer;
             transition: background 0.3s;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
         #startBtn:hover {
-            background-color: #76c976;
+            background-color: #388E3C;
         }
         #startBtn:disabled {
             background-color: #ccc;
@@ -36,121 +105,139 @@
             color: #666;
         }
 
-        /* --- 2. Log Box --- */
+        /* --- Log Box --- */
         #logBox {
-            background-color: #f0f0f0; /* Light Gray */
-            border: 1px solid #ddd;
+            background-color: #263238;
+            border: 1px solid #37474F;
             border-radius: 6px;
-            height: 100px;
+            height: 120px;
             padding: 10px;
             overflow-y: auto;
-            font-size: 13px;
-            font-family: monospace;
-            margin-bottom: 20px;
-            color: #555;
+            font-size: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            margin-bottom: 15px;
+            color: #B0BEC5;
         }
 
-        /* --- 3. The Table --- */
-        table {
-            width: 100%;
-            border-collapse: collapse; /* Removes space between borders */
-            margin-bottom: 20px;
-            font-size: 13px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        }
-
-        thead {
-            background-color: #90ee90; /* Light Green */
-        }
-
-        th {
-            text-align: left;
+        /* --- Results Section --- */
+        #resultsInfo {
             padding: 10px;
-            font-weight: bold; /* Bold text requested */
-            color: #006400;
-            border-bottom: 2px solid #76c976;
+            background-color: #E8F5E9;
+            border-radius: 6px;
+            color: #2E7D32;
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 8px;
         }
-
-        td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #eee; /* Light margin lines */
-        }
-
-        /* specific column widths to fit side panel */
-        th:nth-child(1) { width: 30%; } /* Name */
-        th:nth-child(2) { width: 40%; } /* Jobs */
-        th:nth-child(3) { width: 30%; } /* Status */
-
-        /* --- 4. Upload Section --- */
-        h1 {
-            font-size: 16px;
-            font-weight: 700; /* Bold */
-            margin-bottom: 10px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-        }
-
-        .upload-buttons {
-            margin-bottom: 10px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .upload-btn {
-            background-color: #87CEFA; /* Light Sky Blue */
-            color: #004085;
+        
+        /* --- Export Button --- */
+        #exportCsvBtn {
+            background-color: #4CAF50;
+            color: white;
             border: none;
-            padding: 10px;
+            padding: 12px;
+            width: 100%;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-bottom: 15px;
+        }
+        #exportCsvBtn:hover {
+            background-color: #388E3C;
+        }
+
+        /* --- Storage Info --- */
+        #storageInfo {
+            font-size: 11px;
+            color: #666;
+            text-align: center;
+            padding: 5px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        /* --- Management Buttons --- */
+        .mgmt-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .mgmt-btn {
+            flex: 1;
+            padding: 8px;
             border-radius: 5px;
             cursor: pointer;
-            flex: 1; /* Makes buttons equal width */
+            font-size: 11px;
             font-weight: 600;
             transition: background 0.2s;
+            border: 1px solid;
+        }
+        .mgmt-btn.reset {
+            background-color: #FFF3E0;
+            color: #E65100;
+            border-color: #FFB74D;
+        }
+        .mgmt-btn.reset:hover {
+            background-color: #FFE0B2;
+        }
+        .mgmt-btn.danger {
+            background-color: #FFEBEE;
+            color: #C62828;
+            border-color: #EF9A9A;
+        }
+        .mgmt-btn.danger:hover {
+            background-color: #FFCDD2;
         }
 
-        .upload-btn:hover {
-            background-color: #6eb9ea;
+        /* --- Table Action Buttons --- */
+        .delete-btn, .reset-btn {
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 4px 6px;
+            font-size: 11px;
+            border: 1px solid;
+        }
+        .delete-btn {
+            background-color: #FFEBEE;
+            border-color: #EF9A9A;
+            color: #C62828;
+        }
+        .reset-btn {
+            background-color: #FFF3E0;
+            border-color: #FFB74D;
+            color: #E65100;
+            margin-right: 4px;
         }
 
-        /* Hide the actual file input */
+        /* Hide the file input */
         #hiddenFileInput {
             display: none;
         }
 
-        /* Add this to your style section */
-        .delete-btn {
-            background-color: #ffcccc;
-            border: 1px solid #ff4444;
-            border-radius: 4px;
-            cursor: pointer;
-            padding: 5px 8px;
-            font-size: 12px;
-        }
-        .delete-btn:hover {
-            background-color: #ff9999;
-        }
-
-        .reset-btn {
-            background-color: #ffeeb3; /* Light Yellow */
-            border: 1px solid #ffcc00;
-            border-radius: 4px;
-            cursor: pointer;
-            padding: 5px 8px;
-            font-size: 12px;
-            margin-right: 5px; /* Spacing between buttons */
-        }
-        .reset-btn:hover {
-            background-color: #ffd633;
+        /* Divider */
+        .divider {
+            height: 1px;
+            background: #e0e0e0;
+            margin: 15px 0;
         }
     </style>
 </head>
 <body>
 
-    <button id="startBtn">Start</button>
+    <!-- ========== STEP 1: UPLOAD ========== -->
+    <div class="section-header">
+        <span class="step-num">1</span> Upload JSON Files
+    </div>
+    <button id="computerBtn" title="Click to select one or more JSON files from your computer">
+        📁 Select Files from Computer
+    </button>
+    <input type="file" id="hiddenFileInput" accept=".json" multiple>
 
-    <div id="logBox"></div>
-    <div class="upload-buttons">
-        <button class="upload-btn" id="resetAllBtn">Reset all jobs</button>
+    <!-- ========== STEP 2: FILE QUEUE ========== -->
+    <div class="section-header">
+        <span class="step-num">2</span> File Queue
     </div>
     <table>
         <thead>
@@ -159,23 +246,64 @@
                 <th>Jobs</th>
                 <th>Status</th>
                 <th>Action</th>
-                </tr>
+            </tr>
         </thead>
         <tbody id="jobTableBody">
             <tr>
-                <td colspan="3" style="text-align:center; color:#999;">No jobs loaded yet</td>
+                <td colspan="4" style="text-align:center; color:#999;">No files uploaded yet</td>
             </tr>
         </tbody>
     </table>
 
-    <h1>Upload Files From</h1>
+    <!-- ========== STEP 3: START PROCESSING ========== -->
+    <div class="section-header">
+        <span class="step-num">3</span> Process with Gemini
+    </div>
+    <button id="startBtn" title="Start sending jobs to Gemini AI for extraction. Make sure Gemini is open in another tab!">
+        ▶️ Start Processing
+    </button>
+
+    <!-- ========== STEP 4: PROGRESS LOG ========== -->
+    <div class="section-header">
+        <span class="step-num">4</span> Progress Log
+    </div>
+    <div id="logBox"></div>
+
+    <!-- ========== STEP 5: RESULTS & EXPORT ========== -->
+    <div class="section-header">
+        <span class="step-num">5</span> Results
+    </div>
+    <div id="resultsInfo">📊 0 jobs extracted - ready for export</div>
+    <button id="exportCsvBtn" title="Download all extracted results as a CSV file. Auto-exports when all files complete!">
+        📥 Export Results as CSV
+    </button>
+
+    <div class="divider"></div>
+
+    <!-- ========== STORAGE & MANAGEMENT ========== -->
+    <div class="section-header" style="margin-top: 5px;">
+        <span style="font-size: 14px;">⚙️</span> Storage & Management
+    </div>
+    <div id="storageInfo">💾 Loading...</div>
     
-    <div class="upload-buttons">
-        <button class="upload-btn" id="computerBtn">💻 My Computer</button>
+    <div class="mgmt-buttons">
+        <button class="mgmt-btn reset" id="resetAllBtn" 
+            title="Reset all files back to Pending status so you can reprocess them through Gemini">
+            🔄 Reset All Jobs
+        </button>
+        <button class="mgmt-btn danger" id="clearCompletedBtn"
+            title="Remove completed files from the queue to free up storage space (keeps results)">
+            🗑️ Clear Completed
+        </button>
+    </div>
+    <div class="mgmt-buttons">
+        <button class="mgmt-btn danger" id="clearResultsBtn"
+            title="⚠️ Delete ALL extracted results. Make sure you've exported first!">
+            🗑️ Clear All Results
+        </button>
     </div>
 
-    <input type="file" id="hiddenFileInput" accept=".json" multiple>
-
+    <script src="db.js"></script>
     <script src="sidepanel.js"></script>
 </body>
 </html>

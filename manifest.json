@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gemini Job Auto-Scraper",
-  "version": "1.0",
-  "description": "Automates sending job data to Gemini and saving results to Sheets.",
+  "version": "2.0",
+  "description": "Automates sending job data to Gemini and exports results as CSV. Uses IndexedDB for large file support.",
   "permissions": [
     "sidePanel",
     "storage",
