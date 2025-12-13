@@ -1,4 +1,4 @@
-// background.js - Uses chrome.alarms to survive service worker sleep
+// background.js - Fixed race condition with proper locking
 
 // ============ INDEXEDDB SETUP ============
 const DB_NAME = 'GeminiExtractorDB';
@@ -48,9 +48,11 @@ async function addResult(result) {
     });
 }
 
-// ============ STATE MANAGEMENT (persisted to storage) ============
+// ============ STATE MANAGEMENT ============
 const ALARM_NAME = 'processNextJob';
+const TIMEOUT_ALARM = 'typingTimeout';
 const STATE_KEY = 'processingState';
+const TYPING_TIMEOUT_SECONDS = 180; // 3 minutes max for any single job
 
 async function getState() {
     return new Promise((resolve) => {
@@ -58,7 +60,9 @@ async function getState() {
             resolve(result[STATE_KEY] || {
                 isProcessing: false,
                 promptSent: false,
-                currentTabId: null
+                currentTabId: null,
+                isTyping: false,
+                typingStartedAt: null  // Track when typing started
             });
         });
     });
@@ -73,42 +77,73 @@ async function setState(updates) {
 }
 
 async function clearState() {
+    chrome.alarms.clear(TIMEOUT_ALARM);
     return setState({
         isProcessing: false,
         promptSent: false,
-        currentTabId: null
+        currentTabId: null,
+        isTyping: false,
+        typingStartedAt: null
     });
 }
 
-// ============ ALARM HANDLER (wakes up service worker) ============
+// ============ ALARM HANDLER ============
 chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === ALARM_NAME) {
+        const state = await getState();
+        
+        // CRITICAL: Don't process if already typing
+        if (state.isTyping) {
+            console.log('⏳ Still typing, skipping alarm');
+            return;
+        }
+        
         console.log('⏰ Alarm fired - processing next job');
         await processNextJob();
     }
+    
+    // SAFETY TIMEOUT: If typing takes too long, force reset and retry
+    if (alarm.name === TIMEOUT_ALARM) {
+        const state = await getState();
+        
+        if (state.isTyping && state.typingStartedAt) {
+            const elapsed = Date.now() - state.typingStartedAt;
+            console.log(`⚠️ Typing timeout! Elapsed: ${elapsed}ms`);
+            
+            chrome.runtime.sendMessage({ 
+                action: "UI_LOG", 
+                message: `⚠️ Job timed out (${Math.round(elapsed/1000)}s). Retrying...` 
+            });
+            
+            // Force reset the lock and retry the same job
+            await setState({ isTyping: false, typingStartedAt: null });
+            scheduleNextJob(2);
+        }
+    }
 });
 
-// Schedule next job using alarm (survives service worker sleep)
-function scheduleNextJob(delaySeconds = 2) {
-    chrome.alarms.create(ALARM_NAME, { delayInMinutes: delaySeconds / 60 });
+function scheduleNextJob(delaySeconds = 3) {
+    // ALWAYS clear existing alarm first to prevent duplicates
+    chrome.alarms.clear(ALARM_NAME, () => {
+        chrome.alarms.create(ALARM_NAME, { delayInMinutes: delaySeconds / 60 });
+        console.log(`📅 Scheduled next job in ${delaySeconds}s`);
+    });
 }
 
-// Cancel any pending alarms
 function cancelScheduledJob() {
     chrome.alarms.clear(ALARM_NAME);
 }
 
-// ============ SERVICE WORKER STARTUP - Auto-resume ============
+// ============ SERVICE WORKER STARTUP ============
 chrome.runtime.onStartup.addListener(async () => {
-    console.log('🔄 Service worker started - checking for pending work');
+    console.log('🔄 Service worker started');
     const state = await getState();
-    if (state.isProcessing) {
+    if (state.isProcessing && !state.isTyping) {
         chrome.runtime.sendMessage({ action: "UI_LOG", message: "🔄 Resuming processing..." });
-        scheduleNextJob(1);
+        scheduleNextJob(2);
     }
 });
 
-// Also check on install/update
 chrome.runtime.onInstalled.addListener(async () => {
     console.log('📦 Extension installed/updated');
     await clearState();
@@ -122,7 +157,9 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "START_PROCESSING") handleStartRequest();
-    if (request.action === "LOG") chrome.runtime.sendMessage({ action: "UI_LOG", message: request.message });
+    if (request.action === "LOG") {
+        try { chrome.runtime.sendMessage({ action: "UI_LOG", message: request.message }); } catch(e) {}
+    }
     if (request.action === "PROMPT_SENT") handlePromptSent();
     if (request.action === "JOB_PROCESSED") processCompletedJob(request.aiResult, request.originalJob, request.fileId);
     if (request.action === "STOP_PROCESSING") stopProcessing();
@@ -130,38 +167,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function stopProcessing() {
     cancelScheduledJob();
+    chrome.alarms.clear(TIMEOUT_ALARM);
     await clearState();
     chrome.runtime.sendMessage({ action: "UI_LOG", message: "⏹️ Processing stopped." });
+    chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
 }
 
 async function handlePromptSent() {
-    await setState({ promptSent: true });
-    chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Prompt sent. Starting jobs..." });
+    chrome.alarms.clear(TIMEOUT_ALARM);
+    await setState({ promptSent: true, isTyping: false, typingStartedAt: null });
+    chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Prompt acknowledged. Starting jobs..." });
     scheduleNextJob(2);
 }
 
 async function handleStartRequest() {
     try {
+        const state = await getState();
+        
+        // Prevent double-start
+        if (state.isTyping) {
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: "⏳ Already processing, please wait..." });
+            return;
+        }
+        
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab || !tab.url.includes("gemini.google.com")) {
             chrome.runtime.sendMessage({ action: "UI_LOG", message: "❌ Open Gemini first!" });
             return;
         }
         
-        // Save state
         await setState({
             isProcessing: true,
-            currentTabId: tab.id
+            currentTabId: tab.id,
+            isTyping: false
         });
         
         chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Connected to Gemini tab." });
         
-        // Initialize DB
         try {
             await initDB();
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Database initialized." });
         } catch (dbError) {
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Database init failed: ${dbError.message}` });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Database error: ${dbError.message}` });
             await clearState();
             return;
         }
@@ -169,16 +215,18 @@ async function handleStartRequest() {
         chrome.scripting.executeScript({
             target: { tabId: tab.id },
             files: ["content.js"]
-        }, async (results) => {
+        }, async () => {
             if (chrome.runtime.lastError) {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Script injection failed: ${chrome.runtime.lastError.message}` });
+                chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Script error: ${chrome.runtime.lastError.message}` });
                 await clearState();
                 return;
             }
             
-            const state = await getState();
-            if (!state.promptSent) {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: "📝 Sending initial prompt to Gemini..." });
+            const currentState = await getState();
+            if (!currentState.promptSent) {
+                chrome.runtime.sendMessage({ action: "UI_LOG", message: "📝 Sending prompt to Gemini..." });
+                await setState({ isTyping: true, typingStartedAt: Date.now() });
+                chrome.alarms.create(TIMEOUT_ALARM, { delayInMinutes: TYPING_TIMEOUT_SECONDS / 60 });
                 chrome.tabs.sendMessage(tab.id, { action: "SEND_INITIAL_PROMPT" });
             } else {
                 scheduleNextJob(1);
@@ -192,8 +240,15 @@ async function handleStartRequest() {
 
 async function processNextJob() {
     const state = await getState();
+    
     if (!state.isProcessing) {
         console.log('Not processing - skipping');
+        return;
+    }
+    
+    // CRITICAL: Check if already typing
+    if (state.isTyping) {
+        console.log('Already typing - skipping');
         return;
     }
 
@@ -201,7 +256,7 @@ async function processNextJob() {
         const result = await chrome.storage.local.get(['fileQueue']);
         const files = result.fileQueue || [];
         
-        // Find the first file that's not complete
+        // Find first incomplete file
         let targetFile = null;
         let targetFileIndex = -1;
         
@@ -214,34 +269,33 @@ async function processNextJob() {
         }
 
         if (!targetFile) {
-            // ALL FILES COMPLETE!
             await clearState();
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: "🎉 All files finished! Preparing export..." });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: "🎉 All files finished!" });
             chrome.runtime.sendMessage({ action: "AUTO_EXPORT_CSV" });
             return;
         }
 
-        // Get job data from IndexedDB
+        // Get job data
         let jobs;
         try {
             jobs = await getJobData(targetFile.id);
         } catch (dbError) {
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ DB read error: ${dbError.message}` });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ DB error: ${dbError.message}` });
             files[targetFileIndex].status = 'complete';
             await chrome.storage.local.set({ fileQueue: files });
-            scheduleNextJob(1);
+            scheduleNextJob(2);
             return;
         }
         
         if (!jobs || jobs.length === 0) {
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ No jobs found for file "${targetFile.name}", skipping...` });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ No jobs in "${targetFile.name}", skipping...` });
             files[targetFileIndex].status = 'complete';
             await chrome.storage.local.set({ fileQueue: files });
+            chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
             scheduleNextJob(1);
             return;
         }
 
-        // Find the next unprocessed job in this file
         const currentJobIndex = targetFile.currentJobIndex || 0;
         
         if (currentJobIndex >= jobs.length) {
@@ -255,7 +309,7 @@ async function processNextJob() {
 
         const currentJob = jobs[currentJobIndex];
 
-        // Update status to processing
+        // Update status
         if (targetFile.status === 'pending') {
             files[targetFileIndex].status = 'processing';
             await chrome.storage.local.set({ fileQueue: files });
@@ -268,39 +322,46 @@ async function processNextJob() {
 
         chrome.runtime.sendMessage({
             action: "UI_LOG",
-            message: `📤 Sending (${displayNum}/${totalJobs}): ${jobTitle.substring(0, 20)}...`
+            message: `📤 Job ${displayNum}/${totalJobs}: ${jobTitle.substring(0, 25)}...`
         });
 
-        // Send job to content script
+        // SET LOCK before sending to content script
+        await setState({ isTyping: true, typingStartedAt: Date.now() });
+        
+        // Start safety timeout timer
+        chrome.alarms.create(TIMEOUT_ALARM, { delayInMinutes: TYPING_TIMEOUT_SECONDS / 60 });
+
+        // Send to content script
         chrome.tabs.sendMessage(state.currentTabId, {
             action: "PROMPT_GEMINI",
             job: currentJob,
             fileId: targetFile.id,
             jobIndex: currentJobIndex
-        }, (response) => {
-            if (chrome.runtime.lastError) {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Message error: ${chrome.runtime.lastError.message}` });
-                // Try to continue anyway after a delay
-                scheduleNextJob(5);
-            }
         });
+        
+        // Note: We do NOT schedule next job here!
+        // It will be scheduled by processCompletedJob when content.js responds
+
     } catch (error) {
-        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Processing error: ${error.message}` });
-        scheduleNextJob(3); // Retry after delay
+        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Error: ${error.message}` });
+        chrome.alarms.clear(TIMEOUT_ALARM);
+        await setState({ isTyping: false, typingStartedAt: null });
+        scheduleNextJob(5);
     }
 }
 
 async function processCompletedJob(aiResult, originalJob, fileId) {
     try {
-        chrome.runtime.sendMessage({ action: "UI_LOG", message: `✅ AI Responded. Saving...` });
+        // RELEASE LOCK and clear timeout alarm
+        chrome.alarms.clear(TIMEOUT_ALARM);
+        await setState({ isTyping: false, typingStartedAt: null });
+        
+        chrome.runtime.sendMessage({ action: "UI_LOG", message: `✅ AI responded. Saving...` });
 
-        // Validate AI result
         if (!aiResult) {
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Empty AI result, using defaults` });
             aiResult = { personName: [], companyName: "", clientWebsite: "", confidence: 0, reasoning: "Empty response" };
         }
 
-        // Save result to IndexedDB
         const resultEntry = {
             fileId: fileId,
             timestamp: new Date().toISOString(),
@@ -317,12 +378,12 @@ async function processCompletedJob(aiResult, originalJob, fileId) {
 
         try {
             await addResult(resultEntry);
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: `💾 Saved to local database` });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `💾 Saved to database` });
         } catch (dbError) {
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ DB save error: ${dbError.message}` });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Save warning: ${dbError.message}` });
         }
 
-        // Update file progress
+        // Update progress
         const storageResult = await chrome.storage.local.get(['fileQueue']);
         const files = storageResult.fileQueue || [];
         const fileIndex = files.findIndex(f => f.id === fileId);
@@ -340,11 +401,13 @@ async function processCompletedJob(aiResult, originalJob, fileId) {
             chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
         }
 
-        // Schedule next job
-        scheduleNextJob(2);
+        // Schedule next job (only place this should be called during normal processing)
+        scheduleNextJob(3);
         
     } catch (error) {
-        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Job completion error: ${error.message}` });
-        scheduleNextJob(2);
+        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Completion error: ${error.message}` });
+        chrome.alarms.clear(TIMEOUT_ALARM);
+        await setState({ isTyping: false, typingStartedAt: null });
+        scheduleNextJob(3);
     }
 }
