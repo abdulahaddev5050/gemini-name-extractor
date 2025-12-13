@@ -1,6 +1,6 @@
-// background.js - Updated to use IndexedDB for large data storage
+// background.js - Uses chrome.alarms to survive service worker sleep
 
-// ============ INDEXEDDB SETUP (duplicated for service worker context) ============
+// ============ INDEXEDDB SETUP ============
 const DB_NAME = 'GeminiExtractorDB';
 const DB_VERSION = 1;
 const STORES = { JOB_DATA: 'jobData', RESULTS: 'results' };
@@ -48,27 +48,96 @@ async function addResult(result) {
     });
 }
 
+// ============ STATE MANAGEMENT (persisted to storage) ============
+const ALARM_NAME = 'processNextJob';
+const STATE_KEY = 'processingState';
+
+async function getState() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get([STATE_KEY], (result) => {
+            resolve(result[STATE_KEY] || {
+                isProcessing: false,
+                promptSent: false,
+                currentTabId: null
+            });
+        });
+    });
+}
+
+async function setState(updates) {
+    const current = await getState();
+    const newState = { ...current, ...updates };
+    return new Promise((resolve) => {
+        chrome.storage.local.set({ [STATE_KEY]: newState }, resolve);
+    });
+}
+
+async function clearState() {
+    return setState({
+        isProcessing: false,
+        promptSent: false,
+        currentTabId: null
+    });
+}
+
+// ============ ALARM HANDLER (wakes up service worker) ============
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === ALARM_NAME) {
+        console.log('⏰ Alarm fired - processing next job');
+        await processNextJob();
+    }
+});
+
+// Schedule next job using alarm (survives service worker sleep)
+function scheduleNextJob(delaySeconds = 2) {
+    chrome.alarms.create(ALARM_NAME, { delayInMinutes: delaySeconds / 60 });
+}
+
+// Cancel any pending alarms
+function cancelScheduledJob() {
+    chrome.alarms.clear(ALARM_NAME);
+}
+
+// ============ SERVICE WORKER STARTUP - Auto-resume ============
+chrome.runtime.onStartup.addListener(async () => {
+    console.log('🔄 Service worker started - checking for pending work');
+    const state = await getState();
+    if (state.isProcessing) {
+        chrome.runtime.sendMessage({ action: "UI_LOG", message: "🔄 Resuming processing..." });
+        scheduleNextJob(1);
+    }
+});
+
+// Also check on install/update
+chrome.runtime.onInstalled.addListener(async () => {
+    console.log('📦 Extension installed/updated');
+    await clearState();
+});
+
 // ============ MAIN EXTENSION LOGIC ============
 
 chrome.action.onClicked.addListener((tab) => {
     chrome.sidePanel.open({ windowId: tab.windowId });
 });
 
-let isProcessing = false;
-let currentTabId = null;
-let promptSent = false;
-
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "START_PROCESSING") handleStartRequest();
     if (request.action === "LOG") chrome.runtime.sendMessage({ action: "UI_LOG", message: request.message });
     if (request.action === "PROMPT_SENT") handlePromptSent();
     if (request.action === "JOB_PROCESSED") processCompletedJob(request.aiResult, request.originalJob, request.fileId);
+    if (request.action === "STOP_PROCESSING") stopProcessing();
 });
 
-function handlePromptSent() {
-    promptSent = true;
+async function stopProcessing() {
+    cancelScheduledJob();
+    await clearState();
+    chrome.runtime.sendMessage({ action: "UI_LOG", message: "⏹️ Processing stopped." });
+}
+
+async function handlePromptSent() {
+    await setState({ promptSent: true });
     chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Prompt sent. Starting jobs..." });
-    setTimeout(processNextJob, 2000);
+    scheduleNextJob(2);
 }
 
 async function handleStartRequest() {
@@ -78,8 +147,13 @@ async function handleStartRequest() {
             chrome.runtime.sendMessage({ action: "UI_LOG", message: "❌ Open Gemini first!" });
             return;
         }
-        currentTabId = tab.id;
-        isProcessing = true;
+        
+        // Save state
+        await setState({
+            isProcessing: true,
+            currentTabId: tab.id
+        });
+        
         chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Connected to Gemini tab." });
         
         // Initialize DB
@@ -88,135 +162,131 @@ async function handleStartRequest() {
             chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Database initialized." });
         } catch (dbError) {
             chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Database init failed: ${dbError.message}` });
-            isProcessing = false;
+            await clearState();
             return;
         }
         
         chrome.scripting.executeScript({
-            target: { tabId: currentTabId },
+            target: { tabId: tab.id },
             files: ["content.js"]
-        }, (results) => {
+        }, async (results) => {
             if (chrome.runtime.lastError) {
                 chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Script injection failed: ${chrome.runtime.lastError.message}` });
-                isProcessing = false;
+                await clearState();
                 return;
             }
             
-            if (!promptSent) {
+            const state = await getState();
+            if (!state.promptSent) {
                 chrome.runtime.sendMessage({ action: "UI_LOG", message: "📝 Sending initial prompt to Gemini..." });
-                chrome.tabs.sendMessage(currentTabId, { action: "SEND_INITIAL_PROMPT" });
+                chrome.tabs.sendMessage(tab.id, { action: "SEND_INITIAL_PROMPT" });
             } else {
-                processNextJob();
+                scheduleNextJob(1);
             }
         });
     } catch (error) {
         chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Start failed: ${error.message}` });
-        isProcessing = false;
+        await clearState();
     }
 }
 
 async function processNextJob() {
-    if (!isProcessing) return;
+    const state = await getState();
+    if (!state.isProcessing) {
+        console.log('Not processing - skipping');
+        return;
+    }
 
     try {
-        chrome.storage.local.get(['fileQueue'], async (result) => {
-            try {
-                const files = result.fileQueue || [];
-                
-                // Find the first file that's not complete
-                let targetFile = null;
-                let targetFileIndex = -1;
-                
-                for (let i = 0; i < files.length; i++) {
-                    if (files[i].status !== 'complete') {
-                        targetFile = files[i];
-                        targetFileIndex = i;
-                        break;
-                    }
-                }
+        const result = await chrome.storage.local.get(['fileQueue']);
+        const files = result.fileQueue || [];
+        
+        // Find the first file that's not complete
+        let targetFile = null;
+        let targetFileIndex = -1;
+        
+        for (let i = 0; i < files.length; i++) {
+            if (files[i].status !== 'complete') {
+                targetFile = files[i];
+                targetFileIndex = i;
+                break;
+            }
+        }
 
-                if (!targetFile) {
-                    // ALL FILES COMPLETE!
-                    isProcessing = false;
-                    promptSent = false;
-                    chrome.runtime.sendMessage({ action: "UI_LOG", message: "🎉 All files finished! Preparing export..." });
-                    
-                    // AUTO-EXPORT CSV (sidepanel will handle cleanup)
-                    chrome.runtime.sendMessage({ action: "AUTO_EXPORT_CSV" });
-                    return;
-                }
+        if (!targetFile) {
+            // ALL FILES COMPLETE!
+            await clearState();
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: "🎉 All files finished! Preparing export..." });
+            chrome.runtime.sendMessage({ action: "AUTO_EXPORT_CSV" });
+            return;
+        }
 
-                // Get job data from IndexedDB
-                let jobs;
-                try {
-                    jobs = await getJobData(targetFile.id);
-                } catch (dbError) {
-                    chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ DB read error: ${dbError.message}` });
-                    // Skip this file and continue
-                    files[targetFileIndex].status = 'complete';
-                    chrome.storage.local.set({ fileQueue: files });
-                    setTimeout(processNextJob, 1000);
-                    return;
-                }
-                
-                if (!jobs || jobs.length === 0) {
-                    chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ No jobs found for file "${targetFile.name}", skipping...` });
-                    files[targetFileIndex].status = 'complete';
-                    chrome.storage.local.set({ fileQueue: files });
-                    setTimeout(processNextJob, 1000);
-                    return;
-                }
+        // Get job data from IndexedDB
+        let jobs;
+        try {
+            jobs = await getJobData(targetFile.id);
+        } catch (dbError) {
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ DB read error: ${dbError.message}` });
+            files[targetFileIndex].status = 'complete';
+            await chrome.storage.local.set({ fileQueue: files });
+            scheduleNextJob(1);
+            return;
+        }
+        
+        if (!jobs || jobs.length === 0) {
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ No jobs found for file "${targetFile.name}", skipping...` });
+            files[targetFileIndex].status = 'complete';
+            await chrome.storage.local.set({ fileQueue: files });
+            scheduleNextJob(1);
+            return;
+        }
 
-                // Find the next unprocessed job in this file
-                const currentJobIndex = targetFile.currentJobIndex || 0;
-                
-                if (currentJobIndex >= jobs.length) {
-                    files[targetFileIndex].status = 'complete';
-                    chrome.storage.local.set({ fileQueue: files }, () => {
-                        chrome.runtime.sendMessage({ action: "UI_LOG", message: `🏁 File "${targetFile.name}" completed!` });
-                        chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
-                        setTimeout(processNextJob, 1000);
-                    });
-                    return;
-                }
+        // Find the next unprocessed job in this file
+        const currentJobIndex = targetFile.currentJobIndex || 0;
+        
+        if (currentJobIndex >= jobs.length) {
+            files[targetFileIndex].status = 'complete';
+            await chrome.storage.local.set({ fileQueue: files });
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `🏁 File "${targetFile.name}" completed!` });
+            chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
+            scheduleNextJob(1);
+            return;
+        }
 
-                const currentJob = jobs[currentJobIndex];
+        const currentJob = jobs[currentJobIndex];
 
-                // Update status to processing
-                if (targetFile.status === 'pending') {
-                    files[targetFileIndex].status = 'processing';
-                    chrome.storage.local.set({ fileQueue: files });
-                    chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
-                }
+        // Update status to processing
+        if (targetFile.status === 'pending') {
+            files[targetFileIndex].status = 'processing';
+            await chrome.storage.local.set({ fileQueue: files });
+            chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
+        }
 
-                const displayNum = currentJobIndex + 1;
-                const totalJobs = jobs.length;
-                const jobTitle = currentJob.title || currentJob.jobTitle || "Untitled";
+        const displayNum = currentJobIndex + 1;
+        const totalJobs = jobs.length;
+        const jobTitle = currentJob.title || currentJob.jobTitle || "Untitled";
 
-                chrome.runtime.sendMessage({
-                    action: "UI_LOG",
-                    message: `📤 Sending (${displayNum}/${totalJobs}): ${jobTitle.substring(0, 20)}...`
-                });
+        chrome.runtime.sendMessage({
+            action: "UI_LOG",
+            message: `📤 Sending (${displayNum}/${totalJobs}): ${jobTitle.substring(0, 20)}...`
+        });
 
-                // Send job to content script
-                chrome.tabs.sendMessage(currentTabId, {
-                    action: "PROMPT_GEMINI",
-                    job: currentJob,
-                    fileId: targetFile.id,
-                    jobIndex: currentJobIndex
-                }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Message send warning: ${chrome.runtime.lastError.message}` });
-                    }
-                });
-            } catch (innerError) {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Processing error: ${innerError.message}` });
-                setTimeout(processNextJob, 3000); // Retry after delay
+        // Send job to content script
+        chrome.tabs.sendMessage(state.currentTabId, {
+            action: "PROMPT_GEMINI",
+            job: currentJob,
+            fileId: targetFile.id,
+            jobIndex: currentJobIndex
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Message error: ${chrome.runtime.lastError.message}` });
+                // Try to continue anyway after a delay
+                scheduleNextJob(5);
             }
         });
     } catch (error) {
-        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Critical error: ${error.message}` });
-        isProcessing = false;
+        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Processing error: ${error.message}` });
+        scheduleNextJob(3); // Retry after delay
     }
 }
 
@@ -250,45 +320,31 @@ async function processCompletedJob(aiResult, originalJob, fileId) {
             chrome.runtime.sendMessage({ action: "UI_LOG", message: `💾 Saved to local database` });
         } catch (dbError) {
             chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ DB save error: ${dbError.message}` });
-            // Continue anyway - don't block the queue
         }
 
-        // Update file progress in chrome.storage
-        chrome.storage.local.get(['fileQueue'], (result) => {
-            if (chrome.runtime.lastError) {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Storage read error: ${chrome.runtime.lastError.message}` });
-                setTimeout(processNextJob, 2000);
-                return;
+        // Update file progress
+        const storageResult = await chrome.storage.local.get(['fileQueue']);
+        const files = storageResult.fileQueue || [];
+        const fileIndex = files.findIndex(f => f.id === fileId);
+        
+        if (fileIndex !== -1) {
+            files[fileIndex].currentJobIndex = (files[fileIndex].currentJobIndex || 0) + 1;
+            files[fileIndex].processedCount = files[fileIndex].currentJobIndex;
+
+            if (files[fileIndex].currentJobIndex >= files[fileIndex].totalJobs) {
+                files[fileIndex].status = 'complete';
+                chrome.runtime.sendMessage({ action: "UI_LOG", message: `🏁 File "${files[fileIndex].name}" completed!` });
             }
 
-            const files = result.fileQueue || [];
-            const fileIndex = files.findIndex(f => f.id === fileId);
-            
-            if (fileIndex !== -1) {
-                files[fileIndex].currentJobIndex = (files[fileIndex].currentJobIndex || 0) + 1;
-                files[fileIndex].processedCount = files[fileIndex].currentJobIndex;
+            await chrome.storage.local.set({ fileQueue: files });
+            chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
+        }
 
-                // Check if this file is complete
-                if (files[fileIndex].currentJobIndex >= files[fileIndex].totalJobs) {
-                    files[fileIndex].status = 'complete';
-                    chrome.runtime.sendMessage({ action: "UI_LOG", message: `🏁 File "${files[fileIndex].name}" completed!` });
-                }
-
-                chrome.storage.local.set({ fileQueue: files }, () => {
-                    if (chrome.runtime.lastError) {
-                        chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Storage write error: ${chrome.runtime.lastError.message}` });
-                    }
-                    chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
-                    setTimeout(processNextJob, 2000);
-                });
-            } else {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ File tracking error (ID: ${fileId}), continuing...` });
-                setTimeout(processNextJob, 2000);
-            }
-        });
+        // Schedule next job
+        scheduleNextJob(2);
+        
     } catch (error) {
         chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Job completion error: ${error.message}` });
-        // Don't stop - try to continue with next job
-        setTimeout(processNextJob, 2000);
+        scheduleNextJob(2);
     }
 }

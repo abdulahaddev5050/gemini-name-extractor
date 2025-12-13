@@ -12,6 +12,7 @@ const storageInfo = document.getElementById('storageInfo');
 const exportCsvBtn = document.getElementById('exportCsvBtn');
 const clearResultsBtn = document.getElementById('clearResultsBtn');
 const resultsInfo = document.getElementById('resultsInfo');
+const stopBtn = document.getElementById('stopBtn');
 
 // --- 1. Initialize on Startup ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -39,6 +40,14 @@ startBtn.addEventListener('click', () => {
     log("🚀 Start button clicked. Sending signal to Background...");
     chrome.runtime.sendMessage({ action: "START_PROCESSING" });
 });
+
+// B2. Stop Button Logic
+if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+        log("⏹️ Stop button clicked...");
+        chrome.runtime.sendMessage({ action: "STOP_PROCESSING" });
+    });
+}
 
 // C. Reset All Button
 if (resetAllBtn) {
@@ -383,7 +392,10 @@ async function exportResultsAsCsv(autoCleanup = false) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `gemini-extraction-${new Date().toISOString().slice(0,10)}.csv`;
+        // Include date and time to avoid overwriting: gemini-extraction-2025-12-13_143052.csv
+        const now = new Date();
+        const timestamp = now.toISOString().slice(0,10) + '_' + now.toTimeString().slice(0,8).replace(/:/g, '');
+        link.download = `gemini-extraction-${timestamp}.csv`;
         link.click();
         URL.revokeObjectURL(url);
 

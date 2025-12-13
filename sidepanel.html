@@ -3,11 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Job Scraper</title>
+    <title>Gemini Client Extractor</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            min-width: 280px;  /* Minimum width the panel can shrink to */
+            max-width: 100%;
+            overflow-x: hidden;
+        }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            padding: 15px;
+            padding: 12px;
             color: #333;
             background-color: #ffffff;
             margin: 0;
@@ -62,6 +70,12 @@
             margin-bottom: 10px;
             font-size: 12px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            table-layout: fixed;  /* Allows table to shrink */
+        }
+        td, th {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         thead {
             background-color: #e3f2fd;
@@ -161,18 +175,22 @@
         /* --- Management Buttons --- */
         .mgmt-buttons {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             margin-bottom: 8px;
         }
         .mgmt-btn {
             flex: 1;
-            padding: 8px;
+            min-width: 0;  /* Allow shrinking */
+            padding: 8px 4px;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             transition: background 0.2s;
             border: 1px solid;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .mgmt-btn.reset {
             background-color: #FFF3E0;
@@ -259,9 +277,14 @@
     <div class="section-header">
         <span class="step-num">3</span> Process with Gemini
     </div>
-    <button id="startBtn" title="Start sending jobs to Gemini AI for extraction. Make sure Gemini is open in another tab!">
-        ▶️ Start Processing
-    </button>
+    <div style="display: flex; gap: 8px; margin-bottom: 10px; align-items: stretch;">
+        <button id="startBtn" style="flex: 2; margin-bottom: 0;" title="Start sending jobs to Gemini AI for extraction. Make sure Gemini is open in another tab!">
+            ▶️ Start Processing
+        </button>
+        <button id="stopBtn" style="flex: 1; background: #f44336; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px;" title="Stop processing. You can resume later by clicking Start again.">
+            ⏹️ Stop
+        </button>
+    </div>
 
     <!-- ========== STEP 4: PROGRESS LOG ========== -->
     <div class="section-header">
