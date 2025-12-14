@@ -7,33 +7,42 @@ if (typeof window.__GEMINI_EXTRACTOR_LOADED__ === 'undefined') {
     // --- CONFIGURATION ---
     const MAX_WAIT_TIME = 90000; // 90 seconds max timeout per job
 
-    // --- INITIAL PROMPT (sent only once per session) ---
-    const SYSTEM_PROMPT = `You are an expert Information Extraction and Named Entity Recognition (NER) system. Your task is to analyze the provided JSON data, which represents a job posting, and extract three specific entities: the **Hiring Company Name(s)**, the **Specific Person Name(s)** associated with managing the job or communicating with freelancers, and the **Client Website URL**.
+    // --- SYSTEM PROMPT (sent with each job) ---
+    const SYSTEM_PROMPT = `You are an advanced Information Extraction AI with deep semantic understanding. Your goal is to read a job post and identify the **Identity of the Client** (Person/Company) and their **Owned Digital Assets** (Website). 
 
-Constraints & Guidelines:
-1. Scope: The entities can appear anywhere within the jobTitle, jobDescription, or feedbackReceivedFromFreelancers fields.
-2. Person Name Extraction: Focus on the names of individuals who appear to be the client, manager, or point of contact (e.g., "Keith"). Multiple names should be captured in the list.
-3. Company Name Extraction: Focus on the actual Hiring Company/Client. Distinguish between the actual hiring company and any other organizations, tools, or platforms (e.g., Slack).
-4. Client Website Extraction (CRITICAL): 
-   - Extract a single, complete website URL ONLY if the context implies **ownership** or **affiliation** (e.g., "check our website at...", "rebuild my site [URL]").
-   - **EXCLUSION RULE:** Do NOT extract URLs that are the **Target** or **Source** of the work. If the job is to "scrape data from [URL]", "generate leads from [URL]", or "analyze competitor [URL]", this is a tool/source, NOT the client's website. Return an empty string in these cases.
-5. No Tool/Platform Names: Do not extract names of programming languages, databases, or non-hiring-client tools (e.g., PHP, MySQL, Zapier).
-6. Confidence: Provide a numerical confidence score (0.0 to 1.0). A high confidence (e.g., 0.9 or 1.0) means the name/website is explicitly confirmed as the hiring entity.
-7. Reasoning (CONCISE): Provide a **brief, factual, step-by-step justification**. For the website, explicitly state if the URL is a "Target/Source" or "Owned Entity".
+You must distinguish between the **Subject** (the client hiring), the **Objects** (tools, targets, platforms being used), and the **Topic** (the work being done).
 
-Required Output Format (Strict JSON):
+**Core Extraction Logic:**
+
+1. **Person Name (The "Who"):**
+   - **Goal:** Identify the specific human managing this project.
+   - **Intelligence Check:** Look for names used in a communicative context (e.g., "Thanks, Keith", "Contact Sarah", "I am David"). 
+   - **Avoid:** Famous figures mentioned as examples (e.g., "Write like Shakespeare") or personas (e.g., "Act like a customer").
+
+2. **Company Name (The "Entity"):**
+   - **Goal:** Extract the **explicit legal or trade name** of the hiring organization.
+   - **Intelligence Check (Agent vs. Instrument):** - "We are **Google**" -> EXTRACT (Agent).
+     - "We use **Slack**" -> IGNORE (Instrument/Tool).
+     - "We need an **SEO Expert**" -> IGNORE (Job Title/Topic).
+   - **CRITICAL ANTI-HALLUCINATION RULE:** Do not "summarize" the job into a company name. If the user says "I have a food blog," and never names it, the Company Name is \`""\`. **Do not** output "Food Blog Client" or "SEO Project Client". If the name is not explicitly written, return an empty string.
+
+3. **Client Website (The "Property"):**
+   - **Goal:** Extract the URL that belongs to the client.
+   - **Intelligence Check (Ownership vs. Target):**
+     - **Ownership Signals:** "My site", "Our portal", "Redesign [URL]", "Login to [URL]". -> EXTRACT.
+     - **Target Signals:** "Scrape [URL]", "Research [URL]", "Competitor is [URL]", "Leads from [URL]". -> IGNORE (This is a target, not the client).
+
+**Strict JSON Output:**
+
 {
-  "personName": [
-    "Name 1",
-    "Name 2"
-  ],
-  "companyName": "The Company Name",
-  "clientWebsite": "http://example.com",
-  "confidence": 0.0,
-  "reasoning": "1. Person Name(s) found in [Section] as 'Text Fragment'. 2. Company Name found in [Section] as 'Text Fragment'. 3. Client Website determination: [URL] identified as [Target/Source/Owned] based on 'Text Fragment'."
+  "personName": ["Name1"], 
+  "companyName": "Explicit Name OR Empty String",
+  "clientWebsite": "URL OR Empty String",
+  "confidence": 0.0 to 1.0,
+  "reasoning": "Explain WHY you extracted these. Explicitly state why a URL was kept (Ownership) or rejected (Target). Explain why a text string was identified as a Company and not a Tool."
 }
 
-Please wait for the JSON data to be provided in the user message.`;
+`;
 
     // --- HELPER FUNCTIONS ---
     function sendLog(msg) {
@@ -44,26 +53,7 @@ Please wait for the JSON data to be provided in the user message.`;
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // --- STEP 1: SEND INITIAL PROMPT (only once) ---
-    async function sendInitialPrompt() {
-        try {
-            sendLog("📝 Sending system prompt...");
-            
-            const initialCount = document.querySelectorAll('.model-response-text').length;
-            await humanTypeAndSend(SYSTEM_PROMPT, initialCount);
-            await waitForTextStability();
-            
-            sendLog("✅ Gemini acknowledged prompt.");
-            
-            // Notify background that prompt is done, start sending jobs
-            chrome.runtime.sendMessage({ action: "PROMPT_SENT" });
-            
-        } catch (error) {
-            sendLog("❌ Error sending prompt: " + error.message);
-        }
-    }
-
-    // --- STEP 2: SEND JOB DATA (for each job) ---
+    // --- SEND JOB DATA (prompt + data combined each time) ---
     async function sendJobData(rawJobData, fileId) {
         try {
             sendLog(`📋 Processing: ${rawJobData.title?.substring(0, 25) || "Untitled"}...`);
@@ -77,12 +67,17 @@ Please wait for the JSON data to be provided in the user message.`;
                     : []
             };
 
-            // Just send the JSON data (not the prompt)
-            const jsonMessage = JSON.stringify(dataToSendToAI, null, 2);
+            // Combine prompt + data in every message
+            const fullMessage = `${SYSTEM_PROMPT}
+
+--------------------------------------------------
+HERE IS THE NEW INPUT DATA:
+
+${JSON.stringify(dataToSendToAI, null, 2)}`;
 
             // --- TYPE & SEND ---
             const initialCount = document.querySelectorAll('.model-response-text').length;
-            await humanTypeAndSend(jsonMessage, initialCount);
+            await humanTypeAndSend(fullMessage, initialCount);
             await waitForTextStability();
 
             // --- EXTRACT RESPONSE ---
@@ -237,9 +232,6 @@ Please wait for the JSON data to be provided in the user message.`;
 
     // --- MESSAGE LISTENER (only set up once) ---
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === "SEND_INITIAL_PROMPT") {
-            sendInitialPrompt();
-        }
         if (request.action === "PROMPT_GEMINI") {
             sendJobData(request.job, request.fileId);
         }

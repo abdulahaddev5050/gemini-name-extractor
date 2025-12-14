@@ -13,6 +13,9 @@ const exportCsvBtn = document.getElementById('exportCsvBtn');
 const clearResultsBtn = document.getElementById('clearResultsBtn');
 const resultsInfo = document.getElementById('resultsInfo');
 const stopBtn = document.getElementById('stopBtn');
+const parentJobsCount = document.getElementById('parentJobsCount');
+const childJobsCount = document.getElementById('childJobsCount');
+const totalJobsCount = document.getElementById('totalJobsCount');
 
 // --- 1. Initialize on Startup ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -22,6 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadTableFromStorage();
     updateStorageInfo();
     updateResultsInfo();
+    updateJobStats();
 });
 
 // --- 2. Button Logic ---
@@ -46,6 +50,32 @@ if (stopBtn) {
     stopBtn.addEventListener('click', () => {
         log("⏹️ Stop button clicked...");
         chrome.runtime.sendMessage({ action: "STOP_PROCESSING" });
+    });
+}
+
+// B3. Copy Logs Button Logic
+const copyLogsBtn = document.getElementById('copyLogsBtn');
+if (copyLogsBtn) {
+    copyLogsBtn.addEventListener('click', async () => {
+        const logText = logBox.innerText || logBox.textContent || '';
+        if (!logText.trim()) {
+            copyLogsBtn.textContent = '📋 Empty!';
+            setTimeout(() => { copyLogsBtn.textContent = '📋 Copy'; }, 1500);
+            return;
+        }
+        
+        try {
+            await navigator.clipboard.writeText(logText);
+            copyLogsBtn.textContent = '✅ Copied!';
+            copyLogsBtn.classList.add('copied');
+            setTimeout(() => {
+                copyLogsBtn.textContent = '📋 Copy';
+                copyLogsBtn.classList.remove('copied');
+            }, 2000);
+        } catch (err) {
+            copyLogsBtn.textContent = '❌ Failed';
+            setTimeout(() => { copyLogsBtn.textContent = '📋 Copy'; }, 1500);
+        }
     });
 }
 
@@ -104,6 +134,14 @@ hiddenInput.addEventListener('change', async (event) => {
                 extractedName = nameParts[2]; 
             }
 
+            // Count parent jobs (have job_url) and child jobs (have job_id)
+            let parentCount = 0;
+            let childCount = 0;
+            for (const job of jsonData) {
+                if (job.job_url) parentCount++;
+                if (job.job_id) childCount++;
+            }
+
             const fileId = Date.now() + Math.random();
 
             // Store METADATA in chrome.storage.local (tiny)
@@ -112,6 +150,8 @@ hiddenInput.addEventListener('change', async (event) => {
                 filename: file.name,
                 name: extractedName,
                 totalJobs: jsonData.length || 0,
+                parentJobs: parentCount,
+                childJobs: childCount,
                 processedCount: 0,
                 currentJobIndex: 0,  // Track which job we're on
                 status: 'pending'
@@ -124,7 +164,7 @@ hiddenInput.addEventListener('change', async (event) => {
             // Save metadata to chrome.storage
             await addFileMetadata(fileMetadata);
 
-            log(`✅ Saved "${file.name}" (${jsonData.length} jobs)`);
+            log(`✅ Saved "${file.name}" (${jsonData.length} jobs: ${parentCount} parent, ${childCount} child)`);
 
         } catch (err) {
             log(`❌ Error reading ${file.name}: ${err.message}`);
@@ -133,6 +173,7 @@ hiddenInput.addEventListener('change', async (event) => {
 
     loadTableFromStorage();
     updateStorageInfo();
+    updateJobStats();
     hiddenInput.value = '';
 });
 
@@ -231,6 +272,7 @@ async function deleteFile(id) {
             log('🗑️ File removed.');
             loadTableFromStorage();
             updateStorageInfo();
+            updateJobStats();
         });
     });
 }
@@ -293,6 +335,7 @@ async function clearCompletedFiles() {
             log(`🗑️ Cleared ${completedIds.length} completed file(s).`);
             loadTableFromStorage();
             updateStorageInfo();
+            updateJobStats();
         });
     });
 }
@@ -306,6 +349,7 @@ chrome.runtime.onMessage.addListener((request) => {
         loadTableFromStorage();
         updateStorageInfo();
         updateResultsInfo();
+        updateJobStats();
     }
     if (request.action === "AUTO_EXPORT_CSV") {
         // Auto-export triggered when all files complete
@@ -337,6 +381,27 @@ async function updateResultsInfo() {
     resultsInfo.innerHTML = `📊 ${count} jobs extracted - ready for export`;
 }
 
+// --- Job Stats (Parent/Child counts) ---
+function updateJobStats() {
+    chrome.storage.local.get(['fileQueue'], (result) => {
+        const files = result.fileQueue || [];
+        
+        let totalParent = 0;
+        let totalChild = 0;
+        let total = 0;
+        
+        for (const file of files) {
+            totalParent += file.parentJobs || 0;
+            totalChild += file.childJobs || 0;
+            total += file.totalJobs || 0;
+        }
+        
+        if (parentJobsCount) parentJobsCount.textContent = totalParent;
+        if (childJobsCount) childJobsCount.textContent = totalChild;
+        if (totalJobsCount) totalJobsCount.textContent = total;
+    });
+}
+
 // --- Export Results as CSV (from IndexedDB) ---
 // autoCleanup: if true, clears all data after successful export
 async function exportResultsAsCsv(autoCleanup = false) {
@@ -360,14 +425,12 @@ async function exportResultsAsCsv(autoCleanup = false) {
             'Parent ID'
         ];
 
-        // Escape CSV values
+        // Escape CSV values - ALWAYS quote for Google Sheets compatibility
         const escapeCSV = (value) => {
-            if (value === null || value === undefined) return '';
-            const str = String(value);
-            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                return '"' + str.replace(/"/g, '""') + '"';
-            }
-            return str;
+            // Convert to string, handle null/undefined as empty
+            const str = (value === null || value === undefined) ? '' : String(value);
+            // Always wrap in quotes and escape internal quotes
+            return '"' + str.replace(/"/g, '""') + '"';
         };
 
         // Build CSV content

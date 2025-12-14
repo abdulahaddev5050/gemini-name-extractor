@@ -5,19 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini Client Extractor</title>
     <style>
+        /* ============ COLOR PALETTE ============
+           --black: #000000
+           --prussian-blue: #14213d (Primary)
+           --orange: #fca311 (Accent)
+           --alabaster-grey: #e5e5e5 (Background)
+           --white: #ffffff
+        ========================================== */
+        
+        :root {
+            --black: #000000;
+            --prussian-blue: #14213d;
+            --orange: #fca311;
+            --alabaster: #e5e5e5;
+            --white: #ffffff;
+            --prussian-light: #1d3557;
+            --orange-hover: #e59400;
+        }
+
         * {
             box-sizing: border-box;
         }
         html, body {
-            min-width: 280px;  /* Minimum width the panel can shrink to */
+            min-width: 280px;
             max-width: 100%;
             overflow-x: hidden;
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             padding: 12px;
-            color: #333;
-            background-color: #ffffff;
+            color: var(--black);
+            background-color: var(--white);
             margin: 0;
         }
 
@@ -25,17 +43,17 @@
         .section-header {
             font-size: 14px;
             font-weight: 700;
-            color: #555;
+            color: var(--prussian-blue);
             margin: 15px 0 8px 0;
             padding-bottom: 4px;
-            border-bottom: 2px solid #e0e0e0;
+            border-bottom: 2px solid var(--alabaster);
             display: flex;
             align-items: center;
             gap: 6px;
         }
         .section-header .step-num {
-            background: #4CAF50;
-            color: white;
+            background: var(--prussian-blue);
+            color: var(--white);
             border-radius: 50%;
             width: 20px;
             height: 20px;
@@ -47,8 +65,8 @@
 
         /* --- Upload Button --- */
         #computerBtn {
-            background-color: #2196F3;
-            color: white;
+            background-color: var(--prussian-blue);
+            color: var(--white);
             border: none;
             padding: 14px;
             width: 100%;
@@ -60,7 +78,7 @@
             margin-bottom: 10px;
         }
         #computerBtn:hover {
-            background-color: #1976D2;
+            background-color: var(--prussian-light);
         }
 
         /* --- Table --- */
@@ -70,7 +88,7 @@
             margin-bottom: 10px;
             font-size: 12px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            table-layout: fixed;  /* Allows table to shrink */
+            table-layout: fixed;
         }
         td, th {
             overflow: hidden;
@@ -78,18 +96,18 @@
             white-space: nowrap;
         }
         thead {
-            background-color: #e3f2fd;
+            background-color: var(--alabaster);
         }
         th {
             text-align: left;
             padding: 8px;
             font-weight: bold;
-            color: #1565C0;
-            border-bottom: 2px solid #90CAF9;
+            color: var(--prussian-blue);
+            border-bottom: 2px solid var(--prussian-blue);
         }
         td {
             padding: 6px 8px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--alabaster);
         }
         th:nth-child(1) { width: 35%; }
         th:nth-child(2) { width: 20%; }
@@ -98,8 +116,8 @@
 
         /* --- Start Button --- */
         #startBtn {
-            background-color: #4CAF50;
-            color: white;
+            background-color: var(--orange);
+            color: var(--black);
             border: none;
             padding: 14px;
             width: 100%;
@@ -111,18 +129,27 @@
             margin-bottom: 10px;
         }
         #startBtn:hover {
-            background-color: #388E3C;
+            background-color: var(--orange-hover);
         }
         #startBtn:disabled {
-            background-color: #ccc;
+            background-color: var(--alabaster);
             cursor: not-allowed;
-            color: #666;
+            color: #888;
+        }
+
+        /* --- Stop Button --- */
+        #stopBtn {
+            background-color: var(--prussian-blue) !important;
+            color: var(--white) !important;
+        }
+        #stopBtn:hover {
+            background-color: var(--prussian-light) !important;
         }
 
         /* --- Log Box --- */
         #logBox {
-            background-color: #263238;
-            border: 1px solid #37474F;
+            background-color: var(--prussian-blue);
+            border: 1px solid var(--black);
             border-radius: 6px;
             height: 120px;
             padding: 10px;
@@ -130,24 +157,25 @@
             font-size: 12px;
             font-family: 'Consolas', 'Monaco', monospace;
             margin-bottom: 15px;
-            color: #B0BEC5;
+            color: var(--alabaster);
         }
 
         /* --- Results Section --- */
         #resultsInfo {
             padding: 10px;
-            background-color: #E8F5E9;
+            background-color: var(--alabaster);
             border-radius: 6px;
-            color: #2E7D32;
+            color: var(--prussian-blue);
             text-align: center;
             font-weight: 600;
             margin-bottom: 8px;
+            border: 1px solid var(--prussian-blue);
         }
         
         /* --- Export Button --- */
         #exportCsvBtn {
-            background-color: #4CAF50;
-            color: white;
+            background-color: var(--orange);
+            color: var(--black);
             border: none;
             padding: 12px;
             width: 100%;
@@ -159,13 +187,13 @@
             margin-bottom: 15px;
         }
         #exportCsvBtn:hover {
-            background-color: #388E3C;
+            background-color: var(--orange-hover);
         }
 
         /* --- Storage Info --- */
         #storageInfo {
             font-size: 11px;
-            color: #666;
+            color: var(--prussian-blue);
             text-align: center;
             padding: 5px;
             border-radius: 4px;
@@ -180,33 +208,32 @@
         }
         .mgmt-btn {
             flex: 1;
-            min-width: 0;  /* Allow shrinking */
+            min-width: 0;
             padding: 8px 4px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 10px;
             font-weight: 600;
-            transition: background 0.2s;
-            border: 1px solid;
+            transition: all 0.2s;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         .mgmt-btn.reset {
-            background-color: #FFF3E0;
-            color: #E65100;
-            border-color: #FFB74D;
+            background-color: var(--white);
+            color: var(--prussian-blue);
+            border: 1px solid var(--prussian-blue);
         }
         .mgmt-btn.reset:hover {
-            background-color: #FFE0B2;
+            background-color: var(--alabaster);
         }
         .mgmt-btn.danger {
-            background-color: #FFEBEE;
-            color: #C62828;
-            border-color: #EF9A9A;
+            background-color: var(--white);
+            color: var(--prussian-blue);
+            border: 1px solid var(--prussian-blue);
         }
         .mgmt-btn.danger:hover {
-            background-color: #FFCDD2;
+            background-color: var(--alabaster);
         }
 
         /* --- Table Action Buttons --- */
@@ -215,18 +242,24 @@
             cursor: pointer;
             padding: 4px 6px;
             font-size: 11px;
-            border: 1px solid;
+            transition: all 0.2s;
         }
         .delete-btn {
-            background-color: #FFEBEE;
-            border-color: #EF9A9A;
-            color: #C62828;
+            background-color: var(--white);
+            border: 1px solid var(--prussian-blue);
+            color: var(--prussian-blue);
+        }
+        .delete-btn:hover {
+            background-color: var(--alabaster);
         }
         .reset-btn {
-            background-color: #FFF3E0;
-            border-color: #FFB74D;
-            color: #E65100;
+            background-color: var(--orange);
+            border: 1px solid var(--orange);
+            color: var(--black);
             margin-right: 4px;
+        }
+        .reset-btn:hover {
+            background-color: var(--orange-hover);
         }
 
         /* Hide the file input */
@@ -237,8 +270,65 @@
         /* Divider */
         .divider {
             height: 1px;
-            background: #e0e0e0;
+            background: var(--alabaster);
             margin: 15px 0;
+        }
+
+        /* Copy Logs Button */
+        .copy-logs-btn {
+            background-color: var(--alabaster);
+            color: var(--prussian-blue);
+            border: 1px solid var(--prussian-blue);
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .copy-logs-btn:hover {
+            background-color: var(--prussian-blue);
+            color: var(--white);
+        }
+        .copy-logs-btn.copied {
+            background-color: var(--orange);
+            color: var(--black);
+            border-color: var(--orange);
+        }
+
+        /* Job Stats */
+        .job-stats {
+            display: flex;
+            gap: 10px;
+            background: var(--alabaster);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--prussian-blue);
+        }
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+        }
+        .stat-label {
+            color: var(--prussian-blue);
+            font-weight: 500;
+        }
+        .stat-value {
+            background: var(--white);
+            color: var(--prussian-blue);
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid var(--prussian-blue);
+            font-size: 11px;
+        }
+        .stat-item.total .stat-value {
+            background: var(--orange);
+            color: var(--black);
+            border-color: var(--orange);
         }
     </style>
 </head>
@@ -272,6 +362,22 @@
             </tr>
         </tbody>
     </table>
+    
+    <!-- Stats Summary -->
+    <div id="jobStats" class="job-stats">
+        <div class="stat-item">
+            <span class="stat-label">👨‍💼 Parent Jobs:</span>
+            <span class="stat-value" id="parentJobsCount">0</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">👶 Child Jobs:</span>
+            <span class="stat-value" id="childJobsCount">0</span>
+        </div>
+        <div class="stat-item total">
+            <span class="stat-label">📊 Total:</span>
+            <span class="stat-value" id="totalJobsCount">0</span>
+        </div>
+    </div>
 
     <!-- ========== STEP 3: START PROCESSING ========== -->
     <div class="section-header">
@@ -281,14 +387,19 @@
         <button id="startBtn" style="flex: 2; margin-bottom: 0;" title="Start sending jobs to Gemini AI for extraction. Make sure Gemini is open in another tab!">
             ▶️ Start Processing
         </button>
-        <button id="stopBtn" style="flex: 1; background: #f44336; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px;" title="Stop processing. You can resume later by clicking Start again.">
+        <button id="stopBtn" style="flex: 1; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px;" title="Stop processing. You can resume later by clicking Start again.">
             ⏹️ Stop
         </button>
     </div>
 
     <!-- ========== STEP 4: PROGRESS LOG ========== -->
-    <div class="section-header">
-        <span class="step-num">4</span> Progress Log
+    <div class="section-header" style="justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="step-num">4</span> Progress Log
+        </div>
+        <button id="copyLogsBtn" class="copy-logs-btn" title="Copy all logs to clipboard">
+            📋 Copy
+        </button>
     </div>
     <div id="logBox"></div>
 

@@ -59,7 +59,6 @@ async function getState() {
         chrome.storage.local.get([STATE_KEY], (result) => {
             resolve(result[STATE_KEY] || {
                 isProcessing: false,
-                promptSent: false,
                 currentTabId: null,
                 isTyping: false,
                 typingStartedAt: null  // Track when typing started
@@ -80,7 +79,6 @@ async function clearState() {
     chrome.alarms.clear(TIMEOUT_ALARM);
     return setState({
         isProcessing: false,
-        promptSent: false,
         currentTabId: null,
         isTyping: false,
         typingStartedAt: null
@@ -152,16 +150,15 @@ chrome.runtime.onInstalled.addListener(async () => {
 // ============ MAIN EXTENSION LOGIC ============
 
 chrome.action.onClicked.addListener((tab) => {
-    chrome.sidePanel.open({ windowId: tab.windowId });
+  chrome.sidePanel.open({ windowId: tab.windowId });
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "START_PROCESSING") handleStartRequest();
+  if (request.action === "START_PROCESSING") handleStartRequest();
     if (request.action === "LOG") {
         try { chrome.runtime.sendMessage({ action: "UI_LOG", message: request.message }); } catch(e) {}
     }
-    if (request.action === "PROMPT_SENT") handlePromptSent();
-    if (request.action === "JOB_PROCESSED") processCompletedJob(request.aiResult, request.originalJob, request.fileId);
+  if (request.action === "JOB_PROCESSED") processCompletedJob(request.aiResult, request.originalJob, request.fileId);
     if (request.action === "STOP_PROCESSING") stopProcessing();
 });
 
@@ -171,13 +168,6 @@ async function stopProcessing() {
     await clearState();
     chrome.runtime.sendMessage({ action: "UI_LOG", message: "⏹️ Processing stopped." });
     chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
-}
-
-async function handlePromptSent() {
-    chrome.alarms.clear(TIMEOUT_ALARM);
-    await setState({ promptSent: true, isTyping: false, typingStartedAt: null });
-    chrome.runtime.sendMessage({ action: "UI_LOG", message: "✅ Prompt acknowledged. Starting jobs..." });
-    scheduleNextJob(2);
 }
 
 async function handleStartRequest() {
@@ -190,11 +180,11 @@ async function handleStartRequest() {
             return;
         }
         
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tab || !tab.url.includes("gemini.google.com")) {
-            chrome.runtime.sendMessage({ action: "UI_LOG", message: "❌ Open Gemini first!" });
-            return;
-        }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab || !tab.url.includes("gemini.google.com")) {
+    chrome.runtime.sendMessage({ action: "UI_LOG", message: "❌ Open Gemini first!" });
+    return;
+  }
         
         await setState({
             isProcessing: true,
@@ -211,10 +201,10 @@ async function handleStartRequest() {
             await clearState();
             return;
         }
-        
-        chrome.scripting.executeScript({
+  
+  chrome.scripting.executeScript({
             target: { tabId: tab.id },
-            files: ["content.js"]
+    files: ["content.js"]
         }, async () => {
             if (chrome.runtime.lastError) {
                 chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Script error: ${chrome.runtime.lastError.message}` });
@@ -222,15 +212,9 @@ async function handleStartRequest() {
                 return;
             }
             
-            const currentState = await getState();
-            if (!currentState.promptSent) {
-                chrome.runtime.sendMessage({ action: "UI_LOG", message: "📝 Sending prompt to Gemini..." });
-                await setState({ isTyping: true, typingStartedAt: Date.now() });
-                chrome.alarms.create(TIMEOUT_ALARM, { delayInMinutes: TYPING_TIMEOUT_SECONDS / 60 });
-                chrome.tabs.sendMessage(tab.id, { action: "SEND_INITIAL_PROMPT" });
-            } else {
-                scheduleNextJob(1);
-            }
+            // Directly start processing jobs (prompt is included with each job now)
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: "🚀 Starting job processing..." });
+            scheduleNextJob(1);
         });
     } catch (error) {
         chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Start failed: ${error.message}` });
@@ -260,13 +244,13 @@ async function processNextJob() {
         let targetFile = null;
         let targetFileIndex = -1;
         
-        for (let i = 0; i < files.length; i++) {
-            if (files[i].status !== 'complete') {
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].status !== 'complete') {
                 targetFile = files[i];
                 targetFileIndex = i;
-                break;
+                break; 
             }
-        }
+          }
 
         if (!targetFile) {
             await clearState();
@@ -320,8 +304,8 @@ async function processNextJob() {
         const totalJobs = jobs.length;
         const jobTitle = currentJob.title || currentJob.jobTitle || "Untitled";
 
-        chrome.runtime.sendMessage({
-            action: "UI_LOG",
+      chrome.runtime.sendMessage({ 
+          action: "UI_LOG", 
             message: `📤 Job ${displayNum}/${totalJobs}: ${jobTitle.substring(0, 25)}...`
         });
 
@@ -333,7 +317,7 @@ async function processNextJob() {
 
         // Send to content script
         chrome.tabs.sendMessage(state.currentTabId, {
-            action: "PROMPT_GEMINI",
+        action: "PROMPT_GEMINI",
             job: currentJob,
             fileId: targetFile.id,
             jobIndex: currentJobIndex
@@ -350,27 +334,36 @@ async function processNextJob() {
     }
 }
 
+// Helper to safely convert personName to string (handles both array and string)
+function formatPersonName(personName) {
+    if (!personName) return "";
+    if (Array.isArray(personName)) return personName.join("; ");
+    if (typeof personName === 'string') return personName;
+    return String(personName);
+}
+
 async function processCompletedJob(aiResult, originalJob, fileId) {
+    // ALWAYS release lock and clear timeout first
+    chrome.alarms.clear(TIMEOUT_ALARM);
+    await setState({ isTyping: false, typingStartedAt: null });
+    
+    chrome.runtime.sendMessage({ action: "UI_LOG", message: `✅ AI responded. Saving...` });
+
+    // Normalize aiResult
+    if (!aiResult || typeof aiResult !== 'object') {
+        aiResult = { personName: [], companyName: "", clientWebsite: "", confidence: 0, reasoning: "Empty/invalid response" };
+    }
+
     try {
-        // RELEASE LOCK and clear timeout alarm
-        chrome.alarms.clear(TIMEOUT_ALARM);
-        await setState({ isTyping: false, typingStartedAt: null });
-        
-        chrome.runtime.sendMessage({ action: "UI_LOG", message: `✅ AI responded. Saving...` });
-
-        if (!aiResult) {
-            aiResult = { personName: [], companyName: "", clientWebsite: "", confidence: 0, reasoning: "Empty response" };
-        }
-
         const resultEntry = {
             fileId: fileId,
             timestamp: new Date().toISOString(),
             jobTitle: originalJob?.title || originalJob?.jobTitle || "",
-            personName: (aiResult.personName || []).join("; "),
-            companyName: aiResult.companyName || "",
-            clientWebsite: aiResult.clientWebsite || "",
-            confidence: aiResult.confidence || 0,
-            reasoning: aiResult.reasoning || "",
+            personName: formatPersonName(aiResult.personName),
+        companyName: aiResult.companyName || "",
+        clientWebsite: aiResult.clientWebsite || "",
+        confidence: aiResult.confidence || 0,
+        reasoning: aiResult.reasoning || "",
             job_url: originalJob?.job_url || "",
             job_id: originalJob?.job_id || "",
             parent_id: originalJob?.parent_id || ""
@@ -406,8 +399,29 @@ async function processCompletedJob(aiResult, originalJob, fileId) {
         
     } catch (error) {
         chrome.runtime.sendMessage({ action: "UI_LOG", message: `❌ Completion error: ${error.message}` });
-        chrome.alarms.clear(TIMEOUT_ALARM);
-        await setState({ isTyping: false, typingStartedAt: null });
+        
+        // CRITICAL: Still advance the job index to prevent infinite loop!
+        try {
+            const storageResult = await chrome.storage.local.get(['fileQueue']);
+            const files = storageResult.fileQueue || [];
+            const fileIndex = files.findIndex(f => f.id === fileId);
+            
+            if (fileIndex !== -1) {
+                files[fileIndex].currentJobIndex = (files[fileIndex].currentJobIndex || 0) + 1;
+                files[fileIndex].processedCount = files[fileIndex].currentJobIndex;
+                
+                if (files[fileIndex].currentJobIndex >= files[fileIndex].totalJobs) {
+                    files[fileIndex].status = 'complete';
+                }
+                
+                await chrome.storage.local.set({ fileQueue: files });
+                chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Skipping failed job, moving to next...` });
+            }
+        } catch (innerError) {
+            chrome.runtime.sendMessage({ action: "UI_LOG", message: `⚠️ Could not advance job index: ${innerError.message}` });
+        }
+        
+        chrome.runtime.sendMessage({ action: "JOB_PROCESSED_UI_UPDATE" });
         scheduleNextJob(3);
     }
 }
